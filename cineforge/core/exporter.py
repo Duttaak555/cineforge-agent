@@ -7,7 +7,7 @@ from cineforge.core.provenance import sign_c2pa_manifest
 from cineforge.schemas.bible import EntityBible
 from cineforge.schemas.timeline import ShotList, ShotStatus
 
-ASPECT_DIMENSIONS = {
+ASPECT_DIMENSIONS: dict[str, tuple[int, int]] = {
     "16:9": (1920, 1080),
     "9:16": (1080, 1920),
     "1:1": (1080, 1080),
@@ -57,7 +57,6 @@ def render_master_mp4(
     key_path: str = "",
     require_signed: bool = False,
 ) -> tuple[Path, bool]:
-    """Normalizes resolution, FPS, pixel format, and audio across mixed engines before concatenating."""
     approved = [
         s
         for s in sorted(shotlist.shots, key=lambda s: (s.scene_number, s.order_index))
@@ -73,8 +72,10 @@ def render_master_mp4(
         f"fps={bible.fps},format=yuv420p"
     )
 
-    work_dir, normalized_clips = output_mp4.parent, []
+    work_dir = output_mp4.parent
+    normalized_clips: list[Path] = []
     for shot in approved:
+        assert shot.video_path is not None
         norm_clip = work_dir / f"_norm_{shot.shot_id}.mp4"
         if shot.audio_path and Path(shot.audio_path).exists():
             subprocess.run(

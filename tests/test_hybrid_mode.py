@@ -52,7 +52,7 @@ async def test_hybrid_mode_runtime_timeout_fails_safe_and_allows_explicit_fallba
                 self.end_headers()
                 self.wfile.write(sample_wav)
             elif self.path == "/api/generate":
-                time.sleep(0.6)
+                time.sleep(0.4)
             else:
                 self.send_response(404)
                 self.end_headers()
@@ -72,18 +72,23 @@ async def test_hybrid_mode_runtime_timeout_fails_safe_and_allows_explicit_fallba
         settings.ollama_timeout_sec = 0.15
         settings.allow_unverified_qa_fallback = False
 
-        pid = "mac_hybrid_failsafe"
-        init_project(pid, "Fail Safe Test", budget_usd=1.0)
-        register_character(pid, "c1", "Arjun", "Founder", "am_eric")
-        register_environment(pid, "e1", "Office", "Natural light")
-        add_shot(pid, "s1", 1, 1, 1.0, "e1", "Arjun presenting", character_ids=["c1"])
+        pid_strict = "mac_hybrid_failsafe"
+        init_project(pid_strict, "Fail Safe Test", budget_usd=1.0)
+        register_character(pid_strict, "c1", "Arjun", "Founder", "am_eric")
+        register_environment(pid_strict, "e1", "Office", "Natural light")
+        add_shot(pid_strict, "s1", 1, 1, 1.0, "e1", "Arjun presenting", character_ids=["c1"])
         with pytest.raises(PipelineIncompleteError):
-            await run_pipeline(pid, mode="hybrid")
+            await run_pipeline(pid_strict, mode="hybrid")
 
         settings.allow_unverified_qa_fallback = True
-        summary = await run_pipeline(pid, mode="hybrid")
+        pid_fallback = "mac_hybrid_fallback"
+        init_project(pid_fallback, "Fallback Test", budget_usd=1.0)
+        register_character(pid_fallback, "c1", "Arjun", "Founder", "am_eric")
+        register_environment(pid_fallback, "e1", "Office", "Natural light")
+        add_shot(pid_fallback, "s1", 1, 1, 1.0, "e1", "Arjun presenting", character_ids=["c1"])
+        summary = await run_pipeline(pid_fallback, mode="hybrid")
         assert "MockVideo (fallback)" in summary
-        assert (tmp_path / pid / "mac_hybrid_failsafe_master.mp4").exists()
+        assert (tmp_path / pid_fallback / "mac_hybrid_fallback_master.mp4").exists()
     finally:
         settings.ollama_timeout_sec = 300.0
         settings.allow_unverified_qa_fallback = False

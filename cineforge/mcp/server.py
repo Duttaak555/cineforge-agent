@@ -6,6 +6,7 @@ from mcp.server.mcpserver import MCPServer
 from cineforge.config import settings
 from cineforge.core.exporter import export_to_otio, render_master_mp4
 from cineforge.core.orchestrator import VideoOrchestrator
+from cineforge.providers.base import LipSyncProvider, TTSProvider, VideoProvider, VLMQAProvider
 from cineforge.providers.hybrid import resolve_hybrid_providers
 from cineforge.providers.lipsync import MuseTalkLipSyncProvider, PassthroughLipSyncProvider
 from cineforge.providers.mock import MockTTSProvider, MockVideoProvider, MockVLMQAProvider
@@ -49,7 +50,11 @@ def register_character(
     orch = VideoOrchestrator(_resolve_project_dir(project_id))
     bible, shotlist, script = orch.load_state()
     bible.characters[entity_id] = CharacterEntity(
-        entity_id=entity_id, name=name, visual_descriptor=visual_descriptor, voice_id=voice_id, locked_seed=locked_seed
+        entity_id=entity_id,
+        name=name,
+        visual_descriptor=visual_descriptor,
+        voice_id=voice_id,
+        locked_seed=locked_seed,
     )
     orch.save_state(bible, shotlist, script)
     return f"Registered character '{name}'."
@@ -131,12 +136,15 @@ def add_shot(
 async def run_pipeline(
     project_id: str, mode: str | None = None, allow_partial: bool = False, require_signed_c2pa: bool = False
 ) -> str:
-    """Execute TTS, video/HTML rendering, lip-sync, VLM QA retries, Master MP4 + C2PA signing, and .otio export.
-    Supported modes: 'mock' (zero-GPU CI), 'hybrid' (auto-uses live Ollama/Kokoro & falls back for offline GPUs), 'production' (strict live stack).
-    """
+    """Execute TTS, video/HTML rendering, lip-sync, VLM QA retries, Master MP4 + C2PA signing, and .otio export."""
     active_mode = (mode or settings.mode).lower()
     proj_dir = _resolve_project_dir(project_id)
     orch = VideoOrchestrator(proj_dir)
+
+    v_prov: VideoProvider
+    t_prov: TTSProvider
+    q_prov: VLMQAProvider
+    l_prov: LipSyncProvider
 
     if active_mode == "production":
         v_prov = ComfyUIWan22Provider(settings.comfyui_url, cost_per_shot=settings.comfyui_cost_per_shot)
@@ -150,12 +158,10 @@ async def run_pipeline(
         v_prov, t_prov, q_prov, l_prov, status_map = resolve_hybrid_providers()
         provider_summary = "hybrid (" + ", ".join(f"{k}={v}" for k, v in status_map.items()) + ")"
     else:
-        v_prov, t_prov, q_prov, l_prov = (
-            MockVideoProvider(),
-            MockTTSProvider(),
-            MockVLMQAProvider(),
-            PassthroughLipSyncProvider(),
-        )
+        v_prov = MockVideoProvider()
+        t_prov = MockTTSProvider()
+        q_prov = MockVLMQAProvider()
+        l_prov = PassthroughLipSyncProvider()
         provider_summary = "mock (offline zero-GPU)"
 
     shotlist = await orch.run(v_prov, t_prov, q_prov, l_prov, allow_partial=allow_partial)
@@ -175,7 +181,7 @@ async def run_pipeline(
     return f"{status_label} [{provider_summary}]! Master MP4: {mp4_path.resolve()} [{c2pa_status}] | NLE: {otio_path.resolve()} | Spend: ${shotlist.spent_usd:.2f}"
 
 
-def main():
+def main() -> None:
     mcp.run()
 
 

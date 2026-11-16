@@ -1,7 +1,6 @@
 from pathlib import Path
 
-from cineforge.providers.base import TTSProvider, VideoProvider, VLMQAProvider
-from cineforge.providers.lipsync import LipSyncProvider
+from cineforge.providers.base import LipSyncProvider, TTSProvider, VideoProvider, VLMQAProvider
 from cineforge.providers.registry import extract_mid_frame
 from cineforge.renderers.html_motion import render_html_motion_shot
 from cineforge.schemas.bible import EntityBible
@@ -71,6 +70,7 @@ class VideoOrchestrator:
     ) -> ShotList:
         bible, shotlist, script = self.load_state()
         dialogue_lookup = {line.line_id: line for scene in (script.scenes if script else []) for line in scene.dialogue}
+        audio_path: Path | None = None
 
         for shot in shotlist.shots:
             if shot.status == ShotStatus.APPROVED:
@@ -96,7 +96,8 @@ class VideoOrchestrator:
             seed = bible.characters[shot.character_ids[0]].locked_seed if shot.character_ids else 42
 
             while shot.retry_count <= self.max_retries:
-                is_html = shot.engine == RenderEngineType.HTML_MOTION and bool(shot.html_template_spec)
+                html_spec = shot.html_template_spec
+                is_html = shot.engine == RenderEngineType.HTML_MOTION and html_spec is not None
                 est_render = 0.0 if is_html else video_provider.estimate_cost(shot)
                 if round(shotlist.spent_usd + est_render, 4) > shotlist.total_budget_usd:
                     self.save_state(bible, shotlist, script)
@@ -104,12 +105,9 @@ class VideoOrchestrator:
                         f"Projected render cost (${est_render:.4f}) on {shot.shot_id} would exceed budget cap ${shotlist.total_budget_usd:.2f}."
                     )
 
-                if is_html:
+                if is_html and html_spec is not None:
                     raw_vid, cost = await render_html_motion_shot(
-                        shot.html_template_spec,
-                        shot.duration_sec,
-                        self.assets_dir / f"{shot.shot_id}.mp4",
-                        fps=bible.fps,
+                        html_spec, shot.duration_sec, self.assets_dir / f"{shot.shot_id}.mp4", fps=bible.fps
                     )
                 else:
                     raw_vid, cost = await video_provider.generate_shot(
