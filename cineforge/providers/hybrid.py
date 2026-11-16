@@ -31,7 +31,7 @@ def resolve_hybrid_providers() -> tuple[VideoProvider, TTSProvider, VLMQAProvide
         else MockTTSProvider()
     )
     q_prov: VLMQAProvider = (
-        OllamaVLMQAProvider(settings.ollama_url, settings.ollama_vlm_model)
+        OllamaVLMQAProvider(settings.ollama_url, settings.ollama_vlm_model, timeout_sec=settings.ollama_timeout_sec)
         if ollama_up
         else MockVLMQAProvider()
     )

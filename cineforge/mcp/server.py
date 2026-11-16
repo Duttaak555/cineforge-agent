@@ -130,7 +130,7 @@ async def run_pipeline(project_id: str, mode: str | None = None, allow_partial: 
     if active_mode == "production":
         v_prov = ComfyUIWan22Provider(settings.comfyui_url, cost_per_shot=settings.comfyui_cost_per_shot)
         t_prov = KokoroTTSProvider(settings.kokoro_url, cost_per_1k_chars=settings.kokoro_cost_per_1k_chars)
-        q_prov = OllamaVLMQAProvider(settings.ollama_url, settings.ollama_vlm_model)
+        q_prov = OllamaVLMQAProvider(settings.ollama_url, settings.ollama_vlm_model, timeout_sec=settings.ollama_timeout_sec)
         l_prov = MuseTalkLipSyncProvider(settings.lipsync_url)
         provider_summary = "production (ComfyUI + Kokoro + Ollama + MuseTalk)"
     elif active_mode == "hybrid":

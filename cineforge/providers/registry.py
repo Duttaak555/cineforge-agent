@@ -9,9 +9,9 @@ from cineforge.schemas.bible import CharacterEntity
 from cineforge.schemas.timeline import Shot, QAReport
 
 
-def extract_mid_frame(video_path: Path, frame_out: Path) -> Path:
+def extract_mid_frame(video_path: Path, frame_out: Path, max_width: int = 512) -> Path:
     subprocess.run(
-        ["ffmpeg", "-y", "-i", str(video_path), "-vf", "select=eq(n\\,12)", "-vframes", "1", str(frame_out)],
+        ["ffmpeg", "-y", "-i", str(video_path), "-vf", f"select=eq(n\\,12),scale={max_width}:-1", "-vframes", "1", str(frame_out)],
         check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     return frame_out
@@ -85,9 +85,10 @@ class KokoroTTSProvider(TTSProvider):
 
 
 class OllamaVLMQAProvider(VLMQAProvider):
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "qwen2.5vl:7b"):
+    def __init__(self, base_url: str = "http://localhost:11434", model: str = "qwen2.5vl:7b", timeout_sec: float = 300.0):
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.timeout_sec = timeout_sec
 
     async def inspect_shot(self, shot: Shot, grounded_prompt: str, keyframe_path: Path) -> QAReport:
         img_b64 = base64.b64encode(keyframe_path.read_bytes()).decode("utf-8")
@@ -95,10 +96,10 @@ class OllamaVLMQAProvider(VLMQAProvider):
             'Audit frame vs prompt. Reply ONLY JSON {"passed": bool, "score": float, "critique": "str"}.\n'
             f"Prompt: {grounded_prompt}"
         )
-        async with httpx.AsyncClient(timeout=90.0) as client:
+        async with httpx.AsyncClient(timeout=self.timeout_sec) as client:
             res = await client.post(
                 f"{self.base_url}/api/generate",
-                json={"model": self.model, "prompt": prompt, "images": [img_b64], "format": "json", "stream": False},
+                json={"model": self.model, "prompt": prompt, "images": [img_b64], "format": "json", "stream": False, "keep_alive": "10m"},
             )
             res.raise_for_status()
             raw = json.loads(res.json()["response"])
