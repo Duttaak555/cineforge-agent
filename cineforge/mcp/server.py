@@ -1,16 +1,18 @@
 import re
 from pathlib import Path
+
 from mcp.server.mcpserver import MCPServer
+
 from cineforge.config import settings
-from cineforge.schemas.bible import EntityBible, CharacterEntity, EnvironmentEntity
-from cineforge.schemas.script import Script, Scene, DialogueLine
-from cineforge.schemas.timeline import ShotList, Shot, ShotStatus, RenderEngineType
-from cineforge.core.orchestrator import VideoOrchestrator
 from cineforge.core.exporter import export_to_otio, render_master_mp4
-from cineforge.providers.registry import ComfyUIWan22Provider, KokoroTTSProvider, OllamaVLMQAProvider
-from cineforge.providers.lipsync import MuseTalkLipSyncProvider, PassthroughLipSyncProvider
-from cineforge.providers.mock import MockVideoProvider, MockTTSProvider, MockVLMQAProvider
+from cineforge.core.orchestrator import VideoOrchestrator
 from cineforge.providers.hybrid import resolve_hybrid_providers
+from cineforge.providers.lipsync import MuseTalkLipSyncProvider, PassthroughLipSyncProvider
+from cineforge.providers.mock import MockTTSProvider, MockVideoProvider, MockVLMQAProvider
+from cineforge.providers.registry import ComfyUIWan22Provider, KokoroTTSProvider, OllamaVLMQAProvider
+from cineforge.schemas.bible import CharacterEntity, EntityBible, EnvironmentEntity
+from cineforge.schemas.script import DialogueLine, Scene, Script
+from cineforge.schemas.timeline import RenderEngineType, Shot, ShotList, ShotStatus
 
 mcp = MCPServer("CineForge-Studio")
 PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
@@ -40,7 +42,9 @@ def init_project(project_id: str, title: str, aspect_ratio: str = "16:9", budget
 
 
 @mcp.tool()
-def register_character(project_id: str, entity_id: str, name: str, visual_descriptor: str, voice_id: str, locked_seed: int = 42) -> str:
+def register_character(
+    project_id: str, entity_id: str, name: str, visual_descriptor: str, voice_id: str, locked_seed: int = 42
+) -> str:
     """Lock a character's visual tokens, seed, and voice ID in the EntityBible."""
     orch = VideoOrchestrator(_resolve_project_dir(project_id))
     bible, shotlist, script = orch.load_state()
@@ -89,7 +93,12 @@ def add_shot(
         line_id = f"line_{shot_id}"
         scene = next((s for s in script.scenes if s.scene_number == scene_number), None)
         if not scene:
-            scene = Scene(scene_number=scene_number, env_entity_id=env_id, summary=f"Scene {scene_number}", estimated_duration_sec=duration_sec)
+            scene = Scene(
+                scene_number=scene_number,
+                env_entity_id=env_id,
+                summary=f"Scene {scene_number}",
+                estimated_duration_sec=duration_sec,
+            )
             script.scenes.append(scene)
         scene.dialogue.append(
             DialogueLine(
@@ -119,7 +128,9 @@ def add_shot(
 
 
 @mcp.tool()
-async def run_pipeline(project_id: str, mode: str | None = None, allow_partial: bool = False, require_signed_c2pa: bool = False) -> str:
+async def run_pipeline(
+    project_id: str, mode: str | None = None, allow_partial: bool = False, require_signed_c2pa: bool = False
+) -> str:
     """Execute TTS, video/HTML rendering, lip-sync, VLM QA retries, Master MP4 + C2PA signing, and .otio export.
     Supported modes: 'mock' (zero-GPU CI), 'hybrid' (auto-uses live Ollama/Kokoro & falls back for offline GPUs), 'production' (strict live stack).
     """
@@ -130,21 +141,33 @@ async def run_pipeline(project_id: str, mode: str | None = None, allow_partial: 
     if active_mode == "production":
         v_prov = ComfyUIWan22Provider(settings.comfyui_url, cost_per_shot=settings.comfyui_cost_per_shot)
         t_prov = KokoroTTSProvider(settings.kokoro_url, cost_per_1k_chars=settings.kokoro_cost_per_1k_chars)
-        q_prov = OllamaVLMQAProvider(settings.ollama_url, settings.ollama_vlm_model, timeout_sec=settings.ollama_timeout_sec)
+        q_prov = OllamaVLMQAProvider(
+            settings.ollama_url, settings.ollama_vlm_model, timeout_sec=settings.ollama_timeout_sec
+        )
         l_prov = MuseTalkLipSyncProvider(settings.lipsync_url)
         provider_summary = "production (ComfyUI + Kokoro + Ollama + MuseTalk)"
     elif active_mode == "hybrid":
         v_prov, t_prov, q_prov, l_prov, status_map = resolve_hybrid_providers()
         provider_summary = "hybrid (" + ", ".join(f"{k}={v}" for k, v in status_map.items()) + ")"
     else:
-        v_prov, t_prov, q_prov, l_prov = MockVideoProvider(), MockTTSProvider(), MockVLMQAProvider(), PassthroughLipSyncProvider()
+        v_prov, t_prov, q_prov, l_prov = (
+            MockVideoProvider(),
+            MockTTSProvider(),
+            MockVLMQAProvider(),
+            PassthroughLipSyncProvider(),
+        )
         provider_summary = "mock (offline zero-GPU)"
 
     shotlist = await orch.run(v_prov, t_prov, q_prov, l_prov, allow_partial=allow_partial)
     bible, _, _ = orch.load_state()
     otio_path = export_to_otio(shotlist, proj_dir / f"{project_id}.otio", fps=bible.fps)
     mp4_path, is_signed = render_master_mp4(
-        shotlist, bible, proj_dir / f"{project_id}_master.mp4", settings.c2pa_cert_path, settings.c2pa_key_path, require_signed=require_signed_c2pa
+        shotlist,
+        bible,
+        proj_dir / f"{project_id}_master.mp4",
+        settings.c2pa_cert_path,
+        settings.c2pa_key_path,
+        require_signed=require_signed_c2pa,
     )
     failed = [s.shot_id for s in shotlist.shots if s.status != ShotStatus.APPROVED]
     c2pa_status = "C2PA X.509 Signed" if is_signed else "Unsigned Provenance Sidecar (.unsigned_c2pa.json)"

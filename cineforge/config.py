@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,6 +15,7 @@ class Settings(BaseSettings):
     ollama_url: str = "http://localhost:11434"
     ollama_vlm_model: str = "qwen2.5vl:7b"
     ollama_timeout_sec: float = 300.0
+    allow_unverified_qa_fallback: bool = False
     lipsync_url: str = "http://localhost:8000"
     gemini_api_key: str = ""
     c2pa_cert_path: str = ""

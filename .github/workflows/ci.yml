@@ -1,13 +1,29 @@
 name: CineForge CI
 on: [push, pull_request]
 jobs:
-  test:
+  test-and-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - run: pip install -e ".[dev]" && playwright install chromium
-      - run: pytest -v
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install Dependencies & Playwright
+        run: |
+          pip install -e ".[dev]"
+          playwright install chromium
+      - name: Lint & Type Check (Ruff + Mypy)
+        run: |
+          ruff check .
+          mypy cineforge
+      - name: Run Unit & Real-Socket Integration Tests
+        run: pytest -v
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker Image
+        run: docker build -t cineforge-agent:ci .

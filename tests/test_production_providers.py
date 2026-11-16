@@ -1,17 +1,33 @@
 import json
 import subprocess
+
 import httpx
 import pytest
+
+from cineforge.providers.lipsync import MuseTalkLipSyncProvider
+from cineforge.providers.registry import ComfyUIWan22Provider, KokoroTTSProvider, OllamaVLMQAProvider
 from cineforge.schemas.bible import CharacterEntity
 from cineforge.schemas.timeline import Shot
-from cineforge.providers.registry import ComfyUIWan22Provider, KokoroTTSProvider, OllamaVLMQAProvider
-from cineforge.providers.lipsync import MuseTalkLipSyncProvider
 
 
 def _make_dummy_mp4(path):
     subprocess.run(
-        ["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=24:duration=1.0", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(path)],
-        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        [
+            "ffmpeg",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=320x240:rate=24:duration=1.0",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            str(path),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     return path.read_bytes()
 
@@ -26,7 +42,14 @@ async def test_comfyui_wan22_provider_integration(tmp_path, monkeypatch):
             assert "Cyberpunk skyline" in payload["prompt"]["6"]["inputs"]["text"]
             return httpx.Response(200, json={"prompt_id": "job_999"})
         if request.url.path == "/history/job_999":
-            return httpx.Response(200, json={"job_999": {"outputs": {"60": {"videos": [{"filename": "out.mp4", "subfolder": "", "type": "output"}]}}}})
+            return httpx.Response(
+                200,
+                json={
+                    "job_999": {
+                        "outputs": {"60": {"videos": [{"filename": "out.mp4", "subfolder": "", "type": "output"}]}}
+                    }
+                },
+            )
         if request.url.path == "/view":
             return httpx.Response(200, content=sample_mp4)
         return httpx.Response(404)
@@ -36,7 +59,9 @@ async def test_comfyui_wan22_provider_integration(tmp_path, monkeypatch):
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: orig_client(transport=transport))
 
     prov = ComfyUIWan22Provider("http://comfy.local:8188", cost_per_shot=0.05)
-    shot = Shot(shot_id="s_wan", scene_number=1, order_index=1, duration_sec=2.0, env_id="e1", visual_prompt="Cyberpunk skyline")
+    shot = Shot(
+        shot_id="s_wan", scene_number=1, order_index=1, duration_sec=2.0, env_id="e1", visual_prompt="Cyberpunk skyline"
+    )
     out_path, cost = await prov.generate_shot(shot, "Cyberpunk skyline", tmp_path, seed=108)
     assert out_path.exists()
     assert cost == 0.05
@@ -52,7 +77,9 @@ async def test_kokoro_ollama_musetalk_providers(tmp_path, monkeypatch):
         if request.url.path == "/v1/audio/speech":
             return httpx.Response(200, content=b"RIFF_MOCK_WAV_BYTES")
         if request.url.path == "/api/generate":
-            return httpx.Response(200, json={"response": json.dumps({"passed": True, "score": 0.94, "critique": "Clean frame"})})
+            return httpx.Response(
+                200, json={"response": json.dumps({"passed": True, "score": 0.94, "critique": "Clean frame"})}
+            )
         if request.url.path == "/v1/lipsync":
             return httpx.Response(200, content=sample_mp4)
         return httpx.Response(404)

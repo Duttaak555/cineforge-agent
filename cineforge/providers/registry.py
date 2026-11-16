@@ -3,16 +3,30 @@ import base64
 import json
 import subprocess
 from pathlib import Path
+
 import httpx
-from cineforge.providers.base import VideoProvider, TTSProvider, VLMQAProvider
+
+from cineforge.providers.base import TTSProvider, VideoProvider, VLMQAProvider
 from cineforge.schemas.bible import CharacterEntity
-from cineforge.schemas.timeline import Shot, QAReport
+from cineforge.schemas.timeline import QAReport, Shot
 
 
 def extract_mid_frame(video_path: Path, frame_out: Path, max_width: int = 512) -> Path:
     subprocess.run(
-        ["ffmpeg", "-y", "-i", str(video_path), "-vf", f"select=eq(n\\,12),scale={max_width}:-1", "-vframes", "1", str(frame_out)],
-        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        [
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(video_path),
+            "-vf",
+            f"select=eq(n\\,12),scale={max_width}:-1",
+            "-vframes",
+            "1",
+            str(frame_out),
+        ],
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     return frame_out
 
@@ -31,7 +45,9 @@ class ComfyUIWan22Provider(VideoProvider):
     def estimate_cost(self, shot: Shot) -> float:
         return self.cost_per_shot
 
-    async def generate_shot(self, shot: Shot, grounded_prompt: str, output_dir: Path, seed: int = 42) -> tuple[Path, float]:
+    async def generate_shot(
+        self, shot: Shot, grounded_prompt: str, output_dir: Path, seed: int = 42
+    ) -> tuple[Path, float]:
         workflow = json.loads(self.workflow_path.read_text())
         if "6" in workflow:
             workflow["6"]["inputs"]["text"] = grounded_prompt
@@ -57,7 +73,11 @@ class ComfyUIWan22Provider(VideoProvider):
             vid = (
                 await client.get(
                     f"{self.base_url}/view",
-                    params={"filename": meta["filename"], "subfolder": meta.get("subfolder", ""), "type": meta.get("type", "output")},
+                    params={
+                        "filename": meta["filename"],
+                        "subfolder": meta.get("subfolder", ""),
+                        "type": meta.get("type", "output"),
+                    },
                 )
             ).content
             out = output_dir / f"{shot.shot_id}.mp4"
@@ -73,11 +93,19 @@ class KokoroTTSProvider(TTSProvider):
     def estimate_cost(self, text: str) -> float:
         return round(max(0.001, (len(text) / 1000.0) * self.cost_per_1k_chars), 4)
 
-    async def synthesize(self, text: str, character: CharacterEntity, output_path: Path, speed: float = 1.0) -> tuple[Path, float]:
+    async def synthesize(
+        self, text: str, character: CharacterEntity, output_path: Path, speed: float = 1.0
+    ) -> tuple[Path, float]:
         async with httpx.AsyncClient(timeout=60.0) as client:
             res = await client.post(
                 f"{self.base_url}/audio/speech",
-                json={"model": "kokoro", "input": text, "voice": character.voice_id, "response_format": "wav", "speed": speed},
+                json={
+                    "model": "kokoro",
+                    "input": text,
+                    "voice": character.voice_id,
+                    "response_format": "wav",
+                    "speed": speed,
+                },
             )
             res.raise_for_status()
             output_path.write_bytes(res.content)
@@ -85,7 +113,9 @@ class KokoroTTSProvider(TTSProvider):
 
 
 class OllamaVLMQAProvider(VLMQAProvider):
-    def __init__(self, base_url: str = "http://localhost:11434", model: str = "qwen2.5vl:7b", timeout_sec: float = 300.0):
+    def __init__(
+        self, base_url: str = "http://localhost:11434", model: str = "qwen2.5vl:7b", timeout_sec: float = 300.0
+    ):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout_sec = timeout_sec
@@ -99,8 +129,19 @@ class OllamaVLMQAProvider(VLMQAProvider):
         async with httpx.AsyncClient(timeout=self.timeout_sec) as client:
             res = await client.post(
                 f"{self.base_url}/api/generate",
-                json={"model": self.model, "prompt": prompt, "images": [img_b64], "format": "json", "stream": False, "keep_alive": "10m"},
+                json={
+                    "model": self.model,
+                    "prompt": prompt,
+                    "images": [img_b64],
+                    "format": "json",
+                    "stream": False,
+                    "keep_alive": "10m",
+                },
             )
             res.raise_for_status()
             raw = json.loads(res.json()["response"])
-            return QAReport(passed=bool(raw.get("passed", False)), score=float(raw.get("score", 0.0)), critique=str(raw.get("critique", "")))
+            return QAReport(
+                passed=bool(raw.get("passed", False)),
+                score=float(raw.get("score", 0.0)),
+                critique=str(raw.get("critique", "")),
+            )

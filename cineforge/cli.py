@@ -1,5 +1,6 @@
 import json
 import urllib.request
+
 from cineforge.config import settings
 
 
@@ -14,15 +15,15 @@ def doctor() -> None:
     for name, url in endpoints.items():
         try:
             with urllib.request.urlopen(url, timeout=2.0) as resp:
-                extra = ''
-                if '11434' in url and resp.status == 200:
-                    data = json.loads(resp.read().decode('utf-8'))
-                    models = [m['name'] for m in data.get('models', [])]
-                    extra = f' | Models: {models}'
-                print(f'[ONLINE ] {name:20s} -> {url} (HTTP {resp.status}){extra}')
+                extra = ""
+                if "11434" in url and resp.status == 200:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    models = [m["name"] for m in data.get("models", [])]
+                    extra = f" | Models: {models}"
+                print(f"[ONLINE ] {name:20s} -> {url} (HTTP {resp.status}){extra}")
         except Exception as exc:
-            print(f'[OFFLINE] {name:20s} -> {url} ({type(exc).__name__})')
+            print(f"[OFFLINE] {name:20s} -> {url} ({type(exc).__name__})")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     doctor()

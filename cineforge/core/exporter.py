@@ -1,9 +1,11 @@
 import subprocess
 from pathlib import Path
+
 import opentimelineio as otio
+
+from cineforge.core.provenance import sign_c2pa_manifest
 from cineforge.schemas.bible import EntityBible
 from cineforge.schemas.timeline import ShotList, ShotStatus
-from cineforge.core.provenance import sign_c2pa_manifest
 
 ASPECT_DIMENSIONS = {
     "16:9": (1920, 1080),
@@ -57,7 +59,8 @@ def render_master_mp4(
 ) -> tuple[Path, bool]:
     """Normalizes resolution, FPS, pixel format, and audio across mixed engines before concatenating."""
     approved = [
-        s for s in sorted(shotlist.shots, key=lambda s: (s.scene_number, s.order_index))
+        s
+        for s in sorted(shotlist.shots, key=lambda s: (s.scene_number, s.order_index))
         if s.status == ShotStatus.APPROVED and s.video_path
     ]
     if not approved:
@@ -76,26 +79,66 @@ def render_master_mp4(
         if shot.audio_path and Path(shot.audio_path).exists():
             subprocess.run(
                 [
-                    "ffmpeg", "-y", "-i", shot.video_path, "-i", shot.audio_path,
-                    "-vf", scale_pad_vf,
-                    "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-                    "-c:a", "aac", "-ar", "44100", "-ac", "2",
-                    "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
-                    "-shortest", str(norm_clip),
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    shot.video_path,
+                    "-i",
+                    shot.audio_path,
+                    "-vf",
+                    scale_pad_vf,
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "fast",
+                    "-crf",
+                    "18",
+                    "-c:a",
+                    "aac",
+                    "-ar",
+                    "44100",
+                    "-ac",
+                    "2",
+                    "-af",
+                    "loudnorm=I=-14:TP=-1.5:LRA=11",
+                    "-shortest",
+                    str(norm_clip),
                 ],
-                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
         else:
             subprocess.run(
                 [
-                    "ffmpeg", "-y", "-i", shot.video_path,
-                    "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
-                    "-vf", scale_pad_vf,
-                    "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-                    "-c:a", "aac", "-ar", "44100", "-ac", "2",
-                    "-shortest", str(norm_clip),
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    shot.video_path,
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "anullsrc=channel_layout=stereo:sample_rate=44100",
+                    "-vf",
+                    scale_pad_vf,
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "fast",
+                    "-crf",
+                    "18",
+                    "-c:a",
+                    "aac",
+                    "-ar",
+                    "44100",
+                    "-ac",
+                    "2",
+                    "-shortest",
+                    str(norm_clip),
                 ],
-                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
         normalized_clips.append(norm_clip)
 
@@ -104,7 +147,9 @@ def render_master_mp4(
     unsigned_mp4 = work_dir / f"_unsigned_{output_mp4.name}"
     subprocess.run(
         ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(unsigned_mp4)],
-        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        check=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
     )
     return sign_c2pa_manifest(
         unsigned_mp4, output_mp4, bible, cert_path=cert_path, key_path=key_path, require_signed=require_signed

@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
+
 import c2pa
+
 from cineforge.schemas.bible import EntityBible
 
 
@@ -12,13 +14,8 @@ def sign_c2pa_manifest(
     key_path: str = "",
     require_signed: bool = False,
 ) -> tuple[Path, bool]:
-    """
-    Signs output_mp4 with an embedded C2PA X.509 credential when cert_path & key_path are provided.
-    Otherwise writes an explicitly labeled unsigned provenance sidecar (.unsigned_c2pa.json) unless require_signed=True.
-    Returns (output_mp4, is_cryptographically_signed).
-    """
     manifest_def = {
-        "claim_generator": "CineForge-Agent/0.1.1",
+        "claim_generator": "CineForge-Agent/0.1.7",
         "title": bible.title,
         "assertions": [
             {
@@ -42,8 +39,11 @@ def sign_c2pa_manifest(
         from cryptography.hazmat.primitives import hashes, serialization
         from cryptography.hazmat.primitives.asymmetric import ec
 
-        cert_pem, key_pem = Path(cert_path).read_bytes(), Path(key_path).read_bytes()
+        cert_pem = Path(cert_path).read_bytes()
+        key_pem = Path(key_path).read_bytes()
         pk = serialization.load_pem_private_key(key_pem, password=None)
+        if not isinstance(pk, ec.EllipticCurvePrivateKey):
+            raise TypeError("C2PA ES256 signing requires an EllipticCurvePrivateKey.")
         signer = c2pa.create_signer(
             lambda d: pk.sign(d, ec.ECDSA(hashes.SHA256())),
             c2pa.SigningAlg.ES256,

@@ -1,12 +1,13 @@
 import urllib.request
 from pathlib import Path
+
 from cineforge.config import settings
-from cineforge.providers.base import VideoProvider, TTSProvider, VLMQAProvider
-from cineforge.providers.lipsync import LipSyncProvider, MuseTalkLipSyncProvider, PassthroughLipSyncProvider
-from cineforge.providers.mock import MockVideoProvider, MockTTSProvider, MockVLMQAProvider
+from cineforge.providers.base import LipSyncProvider, TTSProvider, VideoProvider, VLMQAProvider
+from cineforge.providers.lipsync import MuseTalkLipSyncProvider, PassthroughLipSyncProvider
+from cineforge.providers.mock import MockTTSProvider, MockVideoProvider, MockVLMQAProvider
 from cineforge.providers.registry import ComfyUIWan22Provider, KokoroTTSProvider, OllamaVLMQAProvider
 from cineforge.schemas.bible import CharacterEntity
-from cineforge.schemas.timeline import Shot, QAReport
+from cineforge.schemas.timeline import QAReport, Shot
 
 
 def _is_reachable(url: str, timeout: float = 1.5) -> bool:
@@ -18,7 +19,6 @@ def _is_reachable(url: str, timeout: float = 1.5) -> bool:
 
 
 class FallbackTTSProvider(TTSProvider):
-    """Uses primary TTS provider and falls back to fallback TTS if runtime inference times out or errors."""
     def __init__(self, primary: TTSProvider, fallback: TTSProvider):
         self.primary = primary
         self.fallback = fallback
@@ -26,7 +26,9 @@ class FallbackTTSProvider(TTSProvider):
     def estimate_cost(self, text: str) -> float:
         return self.primary.estimate_cost(text)
 
-    async def synthesize(self, text: str, character: CharacterEntity, output_path: Path, speed: float = 1.0) -> tuple[Path, float]:
+    async def synthesize(
+        self, text: str, character: CharacterEntity, output_path: Path, speed: float = 1.0
+    ) -> tuple[Path, float]:
         try:
             return await self.primary.synthesize(text, character, output_path, speed=speed)
         except Exception:
@@ -34,17 +36,25 @@ class FallbackTTSProvider(TTSProvider):
 
 
 class FallbackVLMQAProvider(VLMQAProvider):
-    """Uses primary VLM QA provider and falls back to fallback QA if inference times out or errors."""
-    def __init__(self, primary: VLMQAProvider, fallback: VLMQAProvider):
+    """Fails safe (passed=False) on VLM timeout unless allow_unverified_fallback=True."""
+
+    def __init__(self, primary: VLMQAProvider, fallback: VLMQAProvider, allow_unverified_fallback: bool = False):
         self.primary = primary
         self.fallback = fallback
+        self.allow_unverified_fallback = allow_unverified_fallback
 
     async def inspect_shot(self, shot: Shot, grounded_prompt: str, keyframe_path: Path) -> QAReport:
         try:
             return await self.primary.inspect_shot(shot, grounded_prompt, keyframe_path)
         except Exception as exc:
+            if not self.allow_unverified_fallback:
+                return QAReport(
+                    passed=False,
+                    score=0.0,
+                    critique=f"VLM QA runtime error/timeout ({type(exc).__name__}); failing safe.",
+                )
             report = await self.fallback.inspect_shot(shot, grounded_prompt, keyframe_path)
-            report.critique = f"[Fallback QA after {type(exc).__name__}] {report.critique}"
+            report.critique = f"[Unverified Fallback QA after {type(exc).__name__}] {report.critique}"
             return report
 
 
@@ -69,22 +79,23 @@ def resolve_hybrid_providers() -> tuple[VideoProvider, TTSProvider, VLMQAProvide
     )
     q_prov: VLMQAProvider = (
         FallbackVLMQAProvider(
-            OllamaVLMQAProvider(settings.ollama_url, settings.ollama_vlm_model, timeout_sec=settings.ollama_timeout_sec),
+            OllamaVLMQAProvider(
+                settings.ollama_url, settings.ollama_vlm_model, timeout_sec=settings.ollama_timeout_sec
+            ),
             MockVLMQAProvider(),
+            allow_unverified_fallback=settings.allow_unverified_qa_fallback,
         )
         if ollama_up
         else MockVLMQAProvider()
     )
     l_prov: LipSyncProvider = (
-        MuseTalkLipSyncProvider(settings.lipsync_url)
-        if musetalk_up
-        else PassthroughLipSyncProvider()
+        MuseTalkLipSyncProvider(settings.lipsync_url) if musetalk_up else PassthroughLipSyncProvider()
     )
 
     status_map = {
         "video": "ComfyUIWan22" if comfy_up else "MockVideo (fallback)",
-        "tts": "KokoroTTS (with runtime fallback)" if kokoro_up else "MockTTS (fallback)",
-        "vlm_qa": f"OllamaVLM({settings.ollama_vlm_model}, with runtime fallback)" if ollama_up else "MockVLM (fallback)",
+        "tts": "KokoroTTS (runtime fallback)" if kokoro_up else "MockTTS (fallback)",
+        "vlm_qa": f"OllamaVLM({settings.ollama_vlm_model})" if ollama_up else "MockVLM (fallback)",
         "lipsync": "MuseTalk" if musetalk_up else "Passthrough (fallback)",
     }
     return v_prov, t_prov, q_prov, l_prov, status_map

@@ -1,7 +1,8 @@
 import pytest
+
 from cineforge.config import settings
-from cineforge.core.orchestrator import BudgetExceededError, PipelineIncompleteError
-from cineforge.mcp.server import init_project, register_character, register_environment, add_shot, run_pipeline
+from cineforge.core.orchestrator import BudgetExceededError
+from cineforge.mcp.server import add_shot, init_project, register_character, register_environment, run_pipeline
 
 
 @pytest.mark.asyncio
@@ -11,7 +12,19 @@ async def test_end_to_end_mixed_engines_and_export(tmp_path):
     init_project(pid, "CI Verification Film", budget_usd=1.0)
     register_character(pid, "c1", "Maya", "Cyberpunk architect, neon visor", "af_bella")
     register_environment(pid, "e1", "Lab", "Cool cyan volumetric lighting")
-    add_shot(pid, "s1", 1, 1, 1.5, "e1", "Maya inspecting timeline FORCE_QA_FAIL", character_ids=["c1"], dialogue_text="All systems nominal.", speaker_entity_id="c1", requires_lip_sync=True)
+    add_shot(
+        pid,
+        "s1",
+        1,
+        1,
+        1.5,
+        "e1",
+        "Maya inspecting timeline FORCE_QA_FAIL",
+        character_ids=["c1"],
+        dialogue_text="All systems nominal.",
+        speaker_entity_id="c1",
+        requires_lip_sync=True,
+    )
     add_shot(pid, "s2", 1, 2, 1.0, "e1", "HTML Title", engine="html_motion", html_template_spec="<div>TITLE</div>")
     summary = await run_pipeline(pid, mode="mock")
     assert "ci_test_proj_master.mp4" in summary

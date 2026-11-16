@@ -1,11 +1,12 @@
 from pathlib import Path
-from cineforge.schemas.bible import EntityBible
-from cineforge.schemas.script import Script
-from cineforge.schemas.timeline import Shot, ShotList, ShotStatus, RenderEngineType
-from cineforge.providers.base import VideoProvider, TTSProvider, VLMQAProvider
+
+from cineforge.providers.base import TTSProvider, VideoProvider, VLMQAProvider
 from cineforge.providers.lipsync import LipSyncProvider
 from cineforge.providers.registry import extract_mid_frame
 from cineforge.renderers.html_motion import render_html_motion_shot
+from cineforge.schemas.bible import EntityBible
+from cineforge.schemas.script import Script
+from cineforge.schemas.timeline import RenderEngineType, Shot, ShotList, ShotStatus
 
 
 class BudgetExceededError(RuntimeError):
@@ -49,7 +50,15 @@ class VideoOrchestrator:
             if c in bible.characters
         ]
         return " | ".join(
-            p for p in [bible.global_style_prompt, env_desc, " ".join(char_descs), shot.visual_prompt, f"Camera: {shot.camera_motion}"] if p
+            p
+            for p in [
+                bible.global_style_prompt,
+                env_desc,
+                " ".join(char_descs),
+                shot.visual_prompt,
+                f"Camera: {shot.camera_motion}",
+            ]
+            if p
         )
 
     async def run(
@@ -76,7 +85,9 @@ class VideoOrchestrator:
                         f"Projected TTS cost (${est_tts:.4f}) would exceed budget cap ${shotlist.total_budget_usd:.2f}."
                     )
                 audio_path, tts_cost = await tts_provider.synthesize(
-                    line.raw_text, bible.characters[line.speaker_entity_id], self.assets_dir / f"{shot.shot_id}_voice.wav"
+                    line.raw_text,
+                    bible.characters[line.speaker_entity_id],
+                    self.assets_dir / f"{shot.shot_id}_voice.wav",
                 )
                 shot.audio_path = str(audio_path)
                 shotlist.spent_usd = round(shotlist.spent_usd + tts_cost, 4)
@@ -95,10 +106,15 @@ class VideoOrchestrator:
 
                 if is_html:
                     raw_vid, cost = await render_html_motion_shot(
-                        shot.html_template_spec, shot.duration_sec, self.assets_dir / f"{shot.shot_id}.mp4", fps=bible.fps
+                        shot.html_template_spec,
+                        shot.duration_sec,
+                        self.assets_dir / f"{shot.shot_id}.mp4",
+                        fps=bible.fps,
                     )
                 else:
-                    raw_vid, cost = await video_provider.generate_shot(shot, grounded_prompt, self.assets_dir, seed=seed)
+                    raw_vid, cost = await video_provider.generate_shot(
+                        shot, grounded_prompt, self.assets_dir, seed=seed
+                    )
 
                 shot.cost_usd = round(shot.cost_usd + cost, 4)
                 shotlist.spent_usd = round(shotlist.spent_usd + cost, 4)

@@ -1,5 +1,5 @@
-from typing import List
 from pydantic import BaseModel
+
 
 class DialogueLine(BaseModel):
     line_id: str
@@ -9,15 +9,17 @@ class DialogueLine(BaseModel):
     emotion: str = "neutral"
     requires_lip_sync: bool = True
 
+
 class Scene(BaseModel):
     scene_number: int
     env_entity_id: str
     summary: str
     estimated_duration_sec: float
-    dialogue: List[DialogueLine] = []
+    dialogue: list[DialogueLine] = []
+
 
 class Script(BaseModel):
     project_id: str
     logline: str
     target_duration_sec: int
-    scenes: List[Scene]
+    scenes: list[Scene]
