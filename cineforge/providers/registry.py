@@ -11,7 +11,7 @@ from cineforge.schemas.timeline import Shot, QAReport
 
 def extract_mid_frame(video_path: Path, frame_out: Path) -> Path:
     subprocess.run(
-        ["ffmpeg", "-y", "-i", str(video_path), "-vf", "select=eq(n\,12)", "-vframes", "1", str(frame_out)],
+        ["ffmpeg", "-y", "-i", str(video_path), "-vf", "select=eq(n\\,12)", "-vframes", "1", str(frame_out)],
         check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
     return frame_out
@@ -27,6 +27,9 @@ class ComfyUIWan22Provider(VideoProvider):
         self.base_url = base_url.rstrip("/")
         self.workflow_path = workflow_template_path or Path("workflows/wan22_t2v_api.json")
         self.cost_per_shot = cost_per_shot
+
+    def estimate_cost(self, shot: Shot) -> float:
+        return self.cost_per_shot
 
     async def generate_shot(self, shot: Shot, grounded_prompt: str, output_dir: Path, seed: int = 42) -> tuple[Path, float]:
         workflow = json.loads(self.workflow_path.read_text())
@@ -59,13 +62,16 @@ class ComfyUIWan22Provider(VideoProvider):
             ).content
             out = output_dir / f"{shot.shot_id}.mp4"
             out.write_bytes(vid)
-            return out, self.cost_per_shot
+            return out, self.estimate_cost(shot)
 
 
 class KokoroTTSProvider(TTSProvider):
     def __init__(self, base_url: str = "http://localhost:8880/v1", cost_per_1k_chars: float = 0.01):
         self.base_url = base_url.rstrip("/")
         self.cost_per_1k_chars = cost_per_1k_chars
+
+    def estimate_cost(self, text: str) -> float:
+        return round(max(0.001, (len(text) / 1000.0) * self.cost_per_1k_chars), 4)
 
     async def synthesize(self, text: str, character: CharacterEntity, output_path: Path, speed: float = 1.0) -> tuple[Path, float]:
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -75,8 +81,7 @@ class KokoroTTSProvider(TTSProvider):
             )
             res.raise_for_status()
             output_path.write_bytes(res.content)
-        estimated_cost = round(max(0.001, (len(text) / 1000.0) * self.cost_per_1k_chars), 4)
-        return output_path, estimated_cost
+        return output_path, self.estimate_cost(text)
 
 
 class OllamaVLMQAProvider(VLMQAProvider):
@@ -86,8 +91,10 @@ class OllamaVLMQAProvider(VLMQAProvider):
 
     async def inspect_shot(self, shot: Shot, grounded_prompt: str, keyframe_path: Path) -> QAReport:
         img_b64 = base64.b64encode(keyframe_path.read_bytes()).decode("utf-8")
-        prompt = f'Audit frame vs prompt. Reply ONLY JSON {{"passed": bool, "score": float, "critique": "str"}}.
-Prompt: {grounded_prompt}'
+        prompt = (
+            'Audit frame vs prompt. Reply ONLY JSON {"passed": bool, "score": float, "critique": "str"}.\n'
+            f"Prompt: {grounded_prompt}"
+        )
         async with httpx.AsyncClient(timeout=90.0) as client:
             res = await client.post(
                 f"{self.base_url}/api/generate",

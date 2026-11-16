@@ -67,12 +67,14 @@ class VideoOrchestrator:
             if shot.status == ShotStatus.APPROVED:
                 continue
 
-            if shotlist.spent_usd >= shotlist.total_budget_usd:
-                self.save_state(bible, shotlist, script)
-                raise BudgetExceededError(f"Budget cap ${shotlist.total_budget_usd:.2f} reached before {shot.shot_id}.")
-
             line = dialogue_lookup.get(shot.dialogue_line_id) if shot.dialogue_line_id else None
             if line and line.speaker_entity_id in bible.characters:
+                est_tts = tts_provider.estimate_cost(line.raw_text)
+                if round(shotlist.spent_usd + est_tts, 4) > shotlist.total_budget_usd:
+                    self.save_state(bible, shotlist, script)
+                    raise BudgetExceededError(
+                        f"Projected TTS cost (${est_tts:.4f}) would exceed budget cap ${shotlist.total_budget_usd:.2f}."
+                    )
                 audio_path, tts_cost = await tts_provider.synthesize(
                     line.raw_text, bible.characters[line.speaker_entity_id], self.assets_dir / f"{shot.shot_id}_voice.wav"
                 )
@@ -83,11 +85,15 @@ class VideoOrchestrator:
             seed = bible.characters[shot.character_ids[0]].locked_seed if shot.character_ids else 42
 
             while shot.retry_count <= self.max_retries:
-                if shotlist.spent_usd >= shotlist.total_budget_usd:
+                is_html = shot.engine == RenderEngineType.HTML_MOTION and bool(shot.html_template_spec)
+                est_render = 0.0 if is_html else video_provider.estimate_cost(shot)
+                if round(shotlist.spent_usd + est_render, 4) > shotlist.total_budget_usd:
                     self.save_state(bible, shotlist, script)
-                    raise BudgetExceededError(f"Budget cap ${shotlist.total_budget_usd:.2f} reached on {shot.shot_id}.")
+                    raise BudgetExceededError(
+                        f"Projected render cost (${est_render:.4f}) on {shot.shot_id} would exceed budget cap ${shotlist.total_budget_usd:.2f}."
+                    )
 
-                if shot.engine == RenderEngineType.HTML_MOTION and shot.html_template_spec:
+                if is_html:
                     raw_vid, cost = await render_html_motion_shot(
                         shot.html_template_spec, shot.duration_sec, self.assets_dir / f"{shot.shot_id}.mp4", fps=bible.fps
                     )

@@ -100,8 +100,7 @@ def render_master_mp4(
         normalized_clips.append(norm_clip)
 
     concat_list = work_dir / "_concat.txt"
-    concat_list.write_text("
-".join(f"file '{c.resolve()}'" for c in normalized_clips))
+    concat_list.write_text("\n".join(f"file '{c.resolve()}'" for c in normalized_clips))
     unsigned_mp4 = work_dir / f"_unsigned_{output_mp4.name}"
     subprocess.run(
         ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(unsigned_mp4)],
