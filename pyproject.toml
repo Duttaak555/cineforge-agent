@@ -1,14 +1,14 @@
 [project]
 name = "cineforge-agent"
-version = "0.1.1"
-description = "Schema-first, self-healing multi-agent AI video studio with MCP, C2PA provenance, and NLE export."
+version = "0.1.3"
+description = "Schema-first, self-healing multi-agent AI video studio with MCP 2.x, C2PA provenance, and NLE export."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.9.0",
     "pydantic-settings>=2.5.0",
-    "mcp[cli]>=1.2.0",
+    "mcp[cli]>=2.0.0",
     "opentimelineio>=0.17.0",
     "c2pa-python>=0.38.0",
     "playwright>=1.49.0",

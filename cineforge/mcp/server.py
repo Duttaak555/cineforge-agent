@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from cineforge.config import settings
 from cineforge.schemas.bible import EntityBible, CharacterEntity, EnvironmentEntity
 from cineforge.schemas.script import Script, Scene, DialogueLine
@@ -11,7 +11,7 @@ from cineforge.providers.registry import ComfyUIWan22Provider, KokoroTTSProvider
 from cineforge.providers.lipsync import MuseTalkLipSyncProvider, PassthroughLipSyncProvider
 from cineforge.providers.mock import MockVideoProvider, MockTTSProvider, MockVLMQAProvider
 
-mcp = FastMCP("CineForge-Studio")
+mcp = MCPServer("CineForge-Studio")
 PROJECT_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 
@@ -28,6 +28,7 @@ def _resolve_project_dir(project_id: str) -> Path:
 
 @mcp.tool()
 def init_project(project_id: str, title: str, aspect_ratio: str = "16:9", budget_usd: float = 5.0) -> str:
+    """Initialize a new CineForge video project with an EntityBible and ShotList."""
     proj_dir = _resolve_project_dir(project_id)
     orch = VideoOrchestrator(proj_dir)
     orch.save_state(
@@ -39,6 +40,7 @@ def init_project(project_id: str, title: str, aspect_ratio: str = "16:9", budget
 
 @mcp.tool()
 def register_character(project_id: str, entity_id: str, name: str, visual_descriptor: str, voice_id: str, locked_seed: int = 42) -> str:
+    """Lock a character's visual tokens, seed, and voice ID in the EntityBible."""
     orch = VideoOrchestrator(_resolve_project_dir(project_id))
     bible, shotlist, script = orch.load_state()
     bible.characters[entity_id] = CharacterEntity(
@@ -50,6 +52,7 @@ def register_character(project_id: str, entity_id: str, name: str, visual_descri
 
 @mcp.tool()
 def register_environment(project_id: str, env_id: str, name: str, lighting_and_atmosphere: str) -> str:
+    """Lock a recurring location and lighting profile in the EntityBible."""
     orch = VideoOrchestrator(_resolve_project_dir(project_id))
     bible, shotlist, script = orch.load_state()
     bible.environments[env_id] = EnvironmentEntity(
@@ -75,6 +78,7 @@ def add_shot(
     speaker_entity_id: str | None = None,
     requires_lip_sync: bool = False,
 ) -> str:
+    """Add a generative, HTML motion graphic, or lip-synced talking-head shot to the timeline."""
     orch = VideoOrchestrator(_resolve_project_dir(project_id))
     bible, shotlist, script = orch.load_state()
     if script is None:
@@ -115,6 +119,7 @@ def add_shot(
 
 @mcp.tool()
 async def run_pipeline(project_id: str, mode: str | None = None, allow_partial: bool = False, require_signed_c2pa: bool = False) -> str:
+    """Execute TTS, video/HTML rendering, lip-sync, VLM QA retries, Master MP4 + C2PA signing, and .otio export."""
     active_mode = mode or settings.mode
     proj_dir = _resolve_project_dir(project_id)
     orch = VideoOrchestrator(proj_dir)
