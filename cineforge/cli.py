@@ -1,4 +1,5 @@
 import json
+import urllib.error
 import urllib.request
 
 from cineforge.config import settings
@@ -21,7 +22,7 @@ def doctor() -> None:
                     models = [m["name"] for m in data.get("models", [])]
                     extra = f" | Models: {models}"
                 print(f"[ONLINE ] {name:20s} -> {url} (HTTP {resp.status}){extra}")
-        except Exception as exc:
+        except (OSError, urllib.error.URLError, ValueError) as exc:
             print(f"[OFFLINE] {name:20s} -> {url} ({type(exc).__name__})")
 
 

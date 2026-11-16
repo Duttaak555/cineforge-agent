@@ -1,3 +1,4 @@
+import asyncio
 import subprocess
 from pathlib import Path
 
@@ -14,7 +15,8 @@ class MockVideoProvider(VideoProvider):
         self, shot: Shot, grounded_prompt: str, output_dir: Path, seed: int = 42
     ) -> tuple[Path, float]:
         out = output_dir / f"{shot.shot_id}.mp4"
-        subprocess.run(
+        await asyncio.to_thread(
+            subprocess.run,
             [
                 "ffmpeg",
                 "-y",
@@ -40,7 +42,8 @@ class MockTTSProvider(TTSProvider):
         self, text: str, character: CharacterEntity, output_path: Path, speed: float = 1.0
     ) -> tuple[Path, float]:
         dur = max(1.0, len(text.split()) * 0.4)
-        subprocess.run(
+        await asyncio.to_thread(
+            subprocess.run,
             [
                 "ffmpeg",
                 "-y",

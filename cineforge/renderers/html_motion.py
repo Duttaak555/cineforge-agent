@@ -1,3 +1,4 @@
+import asyncio
 import subprocess
 from pathlib import Path
 
@@ -34,7 +35,8 @@ async def render_html_motion_shot(
             raise RuntimeError("Playwright did not record a video stream.")
         webm_path = Path(await video_obj.path())
 
-    subprocess.run(
+    await asyncio.to_thread(
+        subprocess.run,
         [
             "ffmpeg",
             "-y",

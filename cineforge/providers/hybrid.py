@@ -1,5 +1,8 @@
+import urllib.error
 import urllib.request
 from pathlib import Path
+
+import httpx
 
 from cineforge.config import settings
 from cineforge.providers.base import LipSyncProvider, TTSProvider, VideoProvider, VLMQAProvider
@@ -14,7 +17,7 @@ def _is_reachable(url: str, timeout: float = 1.5) -> bool:
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:
             return 200 <= resp.status < 500
-    except Exception:
+    except (OSError, urllib.error.URLError, ValueError):
         return False
 
 
@@ -31,7 +34,7 @@ class FallbackTTSProvider(TTSProvider):
     ) -> tuple[Path, float]:
         try:
             return await self.primary.synthesize(text, character, output_path, speed=speed)
-        except Exception:
+        except (httpx.HTTPError, OSError):
             return await self.fallback.synthesize(text, character, output_path, speed=speed)
 
 
@@ -46,7 +49,7 @@ class FallbackVLMQAProvider(VLMQAProvider):
     async def inspect_shot(self, shot: Shot, grounded_prompt: str, keyframe_path: Path) -> QAReport:
         try:
             return await self.primary.inspect_shot(shot, grounded_prompt, keyframe_path)
-        except Exception as exc:
+        except (httpx.HTTPError, OSError, ValueError) as exc:
             if not self.allow_unverified_fallback:
                 return QAReport(
                     passed=False,
