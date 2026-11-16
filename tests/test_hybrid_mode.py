@@ -1,6 +1,7 @@
 import json
 import subprocess
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import pytest
@@ -17,10 +18,11 @@ def _build_valid_wav(path: Path) -> bytes:
 
 
 @pytest.mark.asyncio
-async def test_hybrid_mode_uses_live_ollama_kokoro_and_falls_back_for_offline_gpu(tmp_path):
+async def test_hybrid_mode_runtime_timeout_fallback(tmp_path):
+    """Verifies MODE=hybrid falls back gracefully when a reachable Ollama endpoint times out mid-inference."""
     sample_wav = _build_valid_wav(tmp_path / 'hybrid.wav')
 
-    class MacHybridHandler(BaseHTTPRequestHandler):
+    class SlowOllamaHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             pass
 
@@ -46,17 +48,12 @@ async def test_hybrid_mode_uses_live_ollama_kokoro_and_falls_back_for_offline_gp
                 self.end_headers()
                 self.wfile.write(sample_wav)
             elif self.path == "/api/generate":
-                data = json.dumps({"response": json.dumps({"passed": True, "score": 0.95, "critique": "Mac VLM OK"})}).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
+                time.sleep(1.5)
             else:
                 self.send_response(404)
                 self.end_headers()
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), MacHybridHandler)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), SlowOllamaHandler)
     port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -68,18 +65,18 @@ async def test_hybrid_mode_uses_live_ollama_kokoro_and_falls_back_for_offline_gp
         settings.lipsync_url = "http://127.0.0.1:59992"
         settings.kokoro_url = f"{base_url}/v1"
         settings.ollama_url = base_url
+        settings.ollama_timeout_sec = 0.2
 
-        pid = "mac_hybrid_proj"
-        init_project(pid, "MacBook Hybrid Run", budget_usd=1.0)
+        pid = "mac_hybrid_timeout_proj"
+        init_project(pid, "MacBook Hybrid Timeout Fallback", budget_usd=1.0)
         register_character(pid, "c1", "Arjun", "Founder", "am_eric")
         register_environment(pid, "e1", "Office", "Natural light")
-        add_shot(pid, "s1", 1, 1, 1.0, "e1", "Arjun presenting", character_ids=["c1"], dialogue_text="Running hybrid mode on Apple Silicon.", speaker_entity_id="c1", requires_lip_sync=True)
+        add_shot(pid, "s1", 1, 1, 1.0, "e1", "Arjun presenting", character_ids=["c1"], dialogue_text="Graceful timeout fallback.", speaker_entity_id="c1", requires_lip_sync=True)
         summary = await run_pipeline(pid, mode="hybrid")
         assert "MockVideo (fallback)" in summary
-        assert "Passthrough (fallback)" in summary
-        assert "KokoroTTS" in summary
-        assert "OllamaVLM" in summary
-        assert (tmp_path / pid / "mac_hybrid_proj_master.mp4").exists()
+        assert "with runtime fallback" in summary
+        assert (tmp_path / pid / "mac_hybrid_timeout_proj_master.mp4").exists()
     finally:
+        settings.ollama_timeout_sec = 300.0
         server.shutdown()
         server.server_close()
