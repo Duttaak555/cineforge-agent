@@ -1,0 +1,20 @@
+services:
+  cineforge-mcp:
+    build: .
+    container_name: cineforge-studio
+    volumes:
+      - ./workspace:/app/workspace
+      - ./workflows:/app/workflows
+    environment:
+      - COMFYUI_URL=${COMFYUI_URL:-http://host.docker.internal:8188}
+      - KOKORO_URL=http://kokoro-tts:8880/v1
+      - OLLAMA_URL=http://ollama-vlm:11434
+    depends_on:
+      - kokoro-tts
+      - ollama-vlm
+  kokoro-tts:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    ports: ["8880:8880"]
+  ollama-vlm:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
