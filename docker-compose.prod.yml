@@ -1,0 +1,116 @@
+name: cineforge-prod
+
+services:
+  ollama:
+    image: ollama/ollama:0.5.7
+    container_name: cineforge-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_KEEP_ALIVE=15m
+      - OLLAMA_MAX_LOADED_MODELS=1
+    volumes:
+      - ollama_models:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  comfyui:
+    image: ghcr.io/comfyanonymous/comfyui:v0.3.14-cuda12.4
+    container_name: cineforge-comfyui
+    restart: unless-stopped
+    ports:
+      - "8188:8188"
+    environment:
+      - CLI_ARGS=--listen 0.0.0.0 --port 8188 --highvram
+    volumes:
+      - comfyui_models:/opt/ComfyUI/models
+      - cineforge_outputs:/opt/ComfyUI/output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8188/system_stats >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  kokoro-tts:
+    image: ghcr.io/remsky/kokoro-fastapi-gpu:v0.2.2
+    container_name: cineforge-kokoro
+    restart: unless-stopped
+    ports:
+      - "8880:8880"
+    environment:
+      - USE_GPU=true
+    volumes:
+      - kokoro_models:/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8880/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  cineforge-orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cineforge-agent:0.2.0
+    container_name: cineforge-orchestrator
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+      comfyui:
+        condition: service_healthy
+      kokoro-tts:
+        condition: service_healthy
+    environment:
+      - CINEFORGE_MODE=production
+      - OLLAMA_URL=http://ollama:11434
+      - COMFYUI_URL=http://comfyui:8188
+      - KOKORO_URL=http://kokoro-tts:8880
+      - C2PA_CERT_PATH=/data/certs/c2pa_signer.pem
+      - C2PA_KEY_PATH=/data/certs/c2pa_signer.key
+      - CINEFORGE_OUTPUT_DIR=/data/outputs
+      - CINEFORGE_MAX_BUDGET_USD=10.00
+    volumes:
+      - cineforge_outputs:/data/outputs
+      - cineforge_certs:/data/certs:ro
+    healthcheck:
+      test: ["CMD", "cineforge-doctor", "--strict"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  ollama_models:
+  comfyui_models:
+  kokoro_models:
+  cineforge_outputs:
+  cineforge_certs:
