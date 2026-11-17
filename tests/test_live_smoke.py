@@ -121,7 +121,7 @@ async def test_full_stack_live_smoke_gate(tmp_path: Path) -> None:
         for name, probe_url in [
             ("ollama", f"{ollama_url.rstrip('/')}/api/tags"),
             ("comfyui", f"{comfy_url.rstrip('/')}/system_stats"),
-            ("kokoro", f"{kokoro_url.rstrip('/')}/health"),
+            ("kokoro", f"{kokoro_url.rstrip('/')}/models"),
         ]:
             resp = await client.get(probe_url)
             resp.raise_for_status()
