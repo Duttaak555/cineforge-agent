@@ -102,6 +102,9 @@ services:
     volumes:
       - cineforge_outputs:/data/outputs
       - cineforge_certs:/data/certs:ro
+      - ./certs:/app/certs:ro
+      - ./tests:/app/tests:ro
+      - ./artifacts:/app/artifacts
     healthcheck:
       test: ["CMD", "cineforge-doctor", "--strict"]
       interval: 30s
