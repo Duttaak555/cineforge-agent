@@ -75,6 +75,28 @@ services:
       retries: 5
       start_period: 20s
 
+  musetalk:
+    image: ghcr.io/tmelyralab/musetalk:v1.5-cuda12.4
+    container_name: cineforge-musetalk
+    restart: unless-stopped
+    ports:
+      - "8890:8890"
+    volumes:
+      - musetalk_models:/app/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8890/health >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   cineforge-orchestrator:
     build:
       context: .
@@ -89,14 +111,18 @@ services:
         condition: service_healthy
       kokoro-tts:
         condition: service_healthy
+      musetalk:
+        condition: service_healthy
     environment:
+      - MODE=production
       - CINEFORGE_MODE=production
       - OLLAMA_URL=http://ollama:11434
       - COMFYUI_URL=http://comfyui:8188
-      - KOKORO_URL=http://kokoro-tts:8880
+      - KOKORO_URL=http://kokoro-tts:8880/v1
+      - LIPSYNC_URL=http://musetalk:8890
       - C2PA_CERT_PATH=/data/certs/c2pa_signer.pem
       - C2PA_KEY_PATH=/data/certs/c2pa_signer.key
-      - CINEFORGE_OUTPUT_DIR=/data/outputs
+      - WORKSPACE_DIR=/data/outputs
       - CINEFORGE_MAX_BUDGET_USD=10.00
     volumes:
       - cineforge_outputs:/data/outputs
@@ -112,5 +138,6 @@ volumes:
   ollama_models:
   comfyui_models:
   kokoro_models:
+  musetalk_models:
   cineforge_outputs:
   cineforge_certs:

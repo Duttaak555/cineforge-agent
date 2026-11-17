@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 
+import httpx
 from mcp.server.mcpserver import MCPServer
 
 from cineforge.config import settings
@@ -11,6 +12,13 @@ from cineforge.providers.hybrid import resolve_hybrid_providers
 from cineforge.providers.lipsync import MuseTalkLipSyncProvider, PassthroughLipSyncProvider
 from cineforge.providers.mock import MockTTSProvider, MockVideoProvider, MockVLMQAProvider
 from cineforge.providers.registry import ComfyUIWan22Provider, KokoroTTSProvider, OllamaVLMQAProvider
+from cineforge.qa.ollama_critic import prewarm_ollama_vlm
+from cineforge.safety.production_gate import (
+    RunExecutionPolicy,
+    RuntimeMode,
+    ServiceAdapterSpec,
+    enforce_production_gate,
+)
 from cineforge.schemas.bible import CharacterEntity, EntityBible, EnvironmentEntity
 from cineforge.schemas.script import DialogueLine, Scene, Script
 from cineforge.schemas.timeline import RenderEngineType, Shot, ShotList, ShotStatus
@@ -137,6 +145,46 @@ async def run_pipeline(
     project_id: str, mode: str | None = None, allow_partial: bool = False, require_signed_c2pa: bool = False
 ) -> str:
     """Execute TTS, video/HTML rendering, lip-sync, VLM QA retries, Master MP4 + C2PA signing, and .otio export."""
+    _mode_str = str(mode or getattr(settings, "mode", "hybrid")).lower()
+    _is_mock_mode = _mode_str == "mock"
+    _policy = RunExecutionPolicy(
+        mode=RuntimeMode(_mode_str),
+        max_budget_usd=float(getattr(settings, "max_budget_usd", 10.0)),
+        max_poll_seconds=float(getattr(settings, "comfyui_poll_timeout_sec", 180.0)),
+        require_c2pa_signing=bool(getattr(settings, "require_c2pa_signing", _mode_str == "production")),
+        c2pa_cert_configured=bool(getattr(settings, "c2pa_cert_path", ""))
+        and bool(getattr(settings, "c2pa_key_path", "")),
+    )
+    _adapters = [
+        ServiceAdapterSpec(
+            name="comfyui",
+            is_mock=_is_mock_mode,
+            endpoint_url=getattr(settings, "comfyui_url", None),
+            verified_live=not _is_mock_mode,
+        ),
+        ServiceAdapterSpec(
+            name="kokoro",
+            is_mock=_is_mock_mode,
+            endpoint_url=getattr(settings, "kokoro_url", None),
+            verified_live=not _is_mock_mode,
+        ),
+        ServiceAdapterSpec(
+            name="ollama_qa",
+            is_mock=_is_mock_mode,
+            endpoint_url=getattr(settings, "ollama_url", None),
+            verified_live=not _is_mock_mode and not bool(getattr(settings, "allow_unverified_qa_fallback", False)),
+        ),
+        ServiceAdapterSpec(
+            name="lipsync",
+            is_mock=_is_mock_mode,
+            endpoint_url=getattr(settings, "lipsync_url", None),
+            verified_live=not _is_mock_mode,
+        ),
+    ]
+    enforce_production_gate(_policy, _adapters)
+    if _policy.mode == RuntimeMode.PRODUCTION:
+        async with httpx.AsyncClient(timeout=float(getattr(settings, "ollama_timeout_sec", 90.0))) as _warm_client:
+            await prewarm_ollama_vlm(_warm_client, str(settings.ollama_url), model=str(settings.ollama_vlm_model))
     active_mode = (mode or settings.mode).lower()
     proj_dir = _resolve_project_dir(project_id)
     orch = VideoOrchestrator(proj_dir)
