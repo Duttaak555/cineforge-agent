@@ -101,3 +101,11 @@ python examples/run_demo.py
 ## License
 
 Apache 2.0 — Copyright 2026 Akashdeep Dutta (`Duttaak555`)
+
+### One-Command Cloud GPU Verification (`Ubuntu + NVIDIA 24GB+ VRAM`)
+
+Run the automated bootstrap and end-to-end `live_smoke` verification suite on a fresh Ubuntu + NVIDIA 24GB+ GPU host:
+
+```bash
+curl -fsSL [https://raw.githubusercontent.com/Duttaak555/cineforge-agent/v0.2.0/scripts/verify_gpu_host.sh](https://raw.githubusercontent.com/Duttaak555/cineforge-agent/v0.2.0/scripts/verify_gpu_host.sh) | bash
+```
