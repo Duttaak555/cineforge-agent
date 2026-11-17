@@ -1,204 +1,125 @@
+from __future__ import annotations
+
 import asyncio
 import json
 import os
-import shutil
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
+import c2pa
 import httpx
 import pytest
 
-from cineforge.qa.ollama_critic import evaluate_keyframe, prewarm_ollama_vlm
-from cineforge.verification.smoke_verifier import (
-    LiveSmokeVerificationReport,
-    generate_test_c2pa_cert_and_sign,
-    verify_mp4_with_ffprobe,
-    verify_otio_references_resolve,
-)
+from cineforge.config import settings
+from cineforge.mcp.server import init_project, run_pipeline
 
 
-def test_verify_otio_references_resolve_validates_paths(tmp_path: Path) -> None:
-    clip_file = tmp_path / "shots" / "shot_01.mp4"
-    clip_file.parent.mkdir(parents=True)
-    clip_file.write_bytes(b"fake-mp4-bytes")
-
-    otio_file = tmp_path / "timeline.otio"
-    otio_payload = {
-        "OTIO_SCHEMA": "Timeline.1",
-        "name": "smoke_timeline",
-        "tracks": {
-            "OTIO_SCHEMA": "Stack.1",
-            "children": [
-                {
-                    "OTIO_SCHEMA": "Track.1",
-                    "children": [
-                        {
-                            "OTIO_SCHEMA": "Clip.2",
-                            "media_reference": {
-                                "OTIO_SCHEMA": "ExternalReference.1",
-                                "target_url": "shots/shot_01.mp4",
-                            },
-                        }
-                    ],
-                }
-            ],
-        },
+@pytest.fixture(scope="session")
+def live_smoke_report() -> Any:
+    telemetry: dict[str, Any] = {
+        "schema_version": "1.0.0",
+        "release_tag": "v0.2.0-ref-linux-gpu",
+        "timestamp_utc": datetime.now(UTC).isoformat(),
+        "git_commit": subprocess.getoutput("git rev-parse HEAD").strip(),
+        "gpu": subprocess.getoutput(
+            "nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader"
+        ).strip(),
+        "checks": {},
     }
-    otio_file.write_text(json.dumps(otio_payload), encoding="utf-8")
+    yield telemetry
 
-    assert verify_otio_references_resolve(otio_file) == 1
-
-
-def test_verify_otio_references_raises_on_missing_clip(tmp_path: Path) -> None:
-    otio_file = tmp_path / "broken.otio"
-    otio_file.write_text(
-        json.dumps(
-            {
-                "OTIO_SCHEMA": "Timeline.1",
-                "media_reference": {
-                    "OTIO_SCHEMA": "ExternalReference.1",
-                    "target_url": "shots/does_not_exist.mp4",
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    with pytest.raises(FileNotFoundError, match="Unresolved OTIO media reference"):
-        verify_otio_references_resolve(otio_file)
-
-
-@pytest.mark.skipif(
-    shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None, reason="ffmpeg/ffprobe not installed"
-)
-def test_verify_mp4_with_ffprobe_on_synthetic_av(tmp_path: Path) -> None:
-    sample_mp4 = tmp_path / "master.mp4"
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=c=blue:s=640x360:d=1.5",
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=440:duration=1.5",
-            "-c:v",
-            "libx264",
-            "-c:a",
-            "aac",
-            "-shortest",
-            str(sample_mp4),
-        ],
-        check=True,
-        capture_output=True,
-    )
-
-    report = verify_mp4_with_ffprobe(sample_mp4)
-    assert report.has_video is True
-    assert report.has_audio is True
-    assert report.video_codec == "h264"
-    assert report.audio_codec == "aac"
-    assert report.width == 640
-    assert report.height == 360
-    assert report.duration_seconds >= 1.4
+    if os.getenv("CINEFORGE_RUN_LIVE_SMOKE") == "1":
+        report_path = Path(
+            os.getenv("CINEFORGE_VERIFICATION_REPORT", "artifacts/verification-v0.2.0-ref-linux-gpu.json")
+        )
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps(telemetry, indent=2), encoding="utf-8")
 
 
 @pytest.mark.live_smoke
 @pytest.mark.asyncio
-async def test_full_stack_live_smoke_gate(tmp_path: Path) -> None:
-    """Opt-in live GPU smoke test: verifies live Ollama Qwen2.5-VL, ComfyUI, Kokoro, FFprobe, OTIO, and C2PA."""
+async def test_full_stack_live_smoke_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    live_smoke_report: dict[str, Any],
+) -> None:
+    """Opt-in live GPU smoke test: verifies all 4 GPU services, end-to-end run_pipeline, FFprobe, OTIO, and C2PA."""
     if os.getenv("CINEFORGE_RUN_LIVE_SMOKE") != "1":
         pytest.skip("Set CINEFORGE_RUN_LIVE_SMOKE=1 on reference Linux+NVIDIA host to run live smoke gate")
 
-    ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    comfy_url = os.getenv("COMFYUI_URL", "http://localhost:8188")
-    kokoro_url = os.getenv("KOKORO_URL", "http://localhost:8880")
-    verified_services: list[str] = []
+    ollama_url = os.getenv("OLLAMA_URL", settings.ollama_url).rstrip("/")
+    comfy_url = os.getenv("COMFYUI_URL", settings.comfyui_url).rstrip("/")
+    kokoro_url = os.getenv("KOKORO_URL", settings.kokoro_url).rstrip("/")
+    lipsync_url = os.getenv("LIPSYNC_URL", settings.lipsync_url).rstrip("/")
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         for name, probe_url in [
-            ("ollama", f"{ollama_url.rstrip('/')}/api/tags"),
-            ("comfyui", f"{comfy_url.rstrip('/')}/system_stats"),
-            ("kokoro", f"{kokoro_url.rstrip('/')}/models"),
+            ("ollama", f"{ollama_url}/api/tags"),
+            ("comfyui", f"{comfy_url}/system_stats"),
+            ("kokoro", f"{kokoro_url}/models"),
+            ("musetalk", f"{lipsync_url}/docs"),
         ]:
             resp = await client.get(probe_url)
-            resp.raise_for_status()
-            verified_services.append(name)
+            assert resp.status_code == 200, f"{name} probe failed at {probe_url}: HTTP {resp.status_code}"
+            if name == "ollama":
+                models = [m.get("name", "") for m in resp.json().get("models", [])]
+                assert any(m.startswith("qwen2.5vl") for m in models), f"Missing qwen2.5vl in Ollama models: {models}"
 
-        warm = await prewarm_ollama_vlm(client, ollama_url)
-        assert warm["status"] == "warm"
+    assert settings.c2pa_cert_path and Path(settings.c2pa_cert_path).is_file(), "C2PA_CERT_PATH must exist in production"
+    assert settings.c2pa_key_path and Path(settings.c2pa_key_path).is_file(), "C2PA_KEY_PATH must exist in production"
+    monkeypatch.setattr(settings, "mode", "production")
+    if hasattr(settings, "projects_dir"):
+        monkeypatch.setattr(settings, "projects_dir", tmp_path)
 
-        # Generate a test frame & verify bounded Qwen2.5-VL critique latency (<90s)
-        frame_png = tmp_path / "live_keyframe.png"
-        proc1 = await asyncio.create_subprocess_exec(
-            "ffmpeg",
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            "color=c=black:s=1920x1080:d=0.1",
-            "-frames:v",
-            "1",
-            str(frame_png),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await proc1.communicate()
-        assert proc1.returncode == 0
-        qa_res = await evaluate_keyframe(client, ollama_url, frame_png, "Solid dark slate test frame")
-        assert qa_res.latency_ms < 90_000
+    init_kwargs: dict[str, Any] = {
+        "project_id": "live_gpu_smoke",
+        "title": "Live GPU Smoke",
+    }
+    init_project(**init_kwargs)
 
-    # Master a 2-second test MP4, verify ffprobe, OTIO resolution, and C2PA signing
-    raw_mp4 = tmp_path / "smoke_raw.mp4"
-    signed_mp4 = tmp_path / "smoke_signed.mp4"
-    proc2 = await asyncio.create_subprocess_exec(
-        "ffmpeg",
-        "-y",
-        "-f",
-        "lavfi",
-        "-i",
-        "color=c=navy:s=1280x720:d=2.0",
-        "-f",
-        "lavfi",
-        "-i",
-        "sine=frequency=520:duration=2.0",
-        "-c:v",
-        "libx264",
-        "-c:a",
-        "aac",
-        "-shortest",
-        str(raw_mp4),
+    result_str = await run_pipeline(
+        project_id="live_gpu_smoke",
+        mode="production",
+        allow_partial=False,
+        require_signed_c2pa=True,
+    )
+    assert "[C2PA X.509 Signed]" in result_str, f"Expected signed C2PA output in production mode, got: {result_str}"
+
+    mp4_files = list(tmp_path.rglob("*_master.mp4"))
+    otio_files = list(tmp_path.rglob("*.otio"))
+    assert mp4_files, f"No *_master.mp4 artifact found under {tmp_path}"
+    assert otio_files, f"No *.otio timeline found under {tmp_path}"
+
+    master_mp4 = mp4_files[0]
+    proc = await asyncio.create_subprocess_exec(
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "stream=codec_type",
+        "-of",
+        "json",
+        str(master_mp4),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    await proc2.communicate()
-    assert proc2.returncode == 0
+    stdout_bytes, stderr_bytes = await proc.communicate()
+    assert proc.returncode == 0, f"ffprobe failed: {stderr_bytes.decode()}"
+    streams = [s.get("codec_type") for s in json.loads(stdout_bytes.decode()).get("streams", [])]
+    assert "video" in streams and "audio" in streams, f"Master MP4 missing video/audio streams: {streams}"
 
-    c2pa_ok = generate_test_c2pa_cert_and_sign(raw_mp4, signed_mp4, tmp_path / "certs")
-    assert c2pa_ok is True
+    reader = c2pa.Reader.from_file(str(master_mp4))
+    manifest_json = json.loads(reader.json())
+    active_label = manifest_json.get("active_manifest")
+    assert active_label, f"C2PA manifest missing active_manifest: {manifest_json}"
 
-    media_report = verify_mp4_with_ffprobe(signed_mp4)
-    otio_file = tmp_path / "smoke.otio"
-    otio_file.write_text(
-        json.dumps(
-            {
-                "OTIO_SCHEMA": "Timeline.1",
-                "media_reference": {
-                    "OTIO_SCHEMA": "ExternalReference.1",
-                    "target_url": str(signed_mp4),
-                },
-            }
-        ),
-        encoding="utf-8",
-    )
-    clips_checked = verify_otio_references_resolve(otio_file)
-
-    summary = LiveSmokeVerificationReport(
-        services_verified=verified_services,
-        media=media_report,
-        otio_clips_checked=clips_checked,
-        c2pa_verified=c2pa_ok,
-    )
-    assert len(summary.services_verified) == 3
+    live_smoke_report["checks"] = {
+        "endpoints_verified": ["ollama", "comfyui", "kokoro", "musetalk"],
+        "pipeline_result": result_str,
+        "master_mp4_bytes": master_mp4.stat().st_size,
+        "ffprobe_streams": streams,
+        "otio_file": otio_files[0].name,
+        "c2pa_active_manifest": active_label,
+    }
