@@ -15,8 +15,8 @@ CineForge unifies agentic studio orchestration, long-form character/scene contin
 * **Built-in MCP 2.x Server:** Drive the entire studio directly from Claude Desktop, Cursor, or VS Code Copilot (`MODE=mock`, `MODE=hybrid`, or `MODE=production`).
 
 
-> **Release Status (`v0.1.9`):** **Public & Ready for Experimentation.**  
-> CineForge-Agent’s MCP 2.x server, Pydantic v2 contracts, orchestration state machine, and deterministic protocol test suite (`mock` / `hybrid` modes) are verified in CI. Running `production` mode requires a separately configured GPU media stack (see the [Reference Deployment Profile](#reference-deployment-profile)) and is gated on the [`v0.2.0` live smoke-test milestone](https://github.com/Duttaak555/cineforge-agent/milestones).
+> **Release Status (`v0.2.0`):** **Production-Ready on the Verified Linux + NVIDIA Reference Profile (`v0.2.0-ref-linux-gpu`).**  
+> All four `v0.2.0` release gates (bounded `<= 768px` `Qwen2.5-VL` QA + pre-warm checks, strict `production` mode isolation & resilience tests, live GPU `ffprobe`/`.otio`/C2PA smoke verification, and pinned `docker-compose.prod.yml` ops) passed live verification on **2026-11-17** (see [Reference Deployment Profile](docs/DEPLOYMENT_PROFILE.md)). Deployments outside this hardware/OS profile remain `mock` or `hybrid`.
 
 ---
 
@@ -58,9 +58,9 @@ Production readiness claims apply **exclusively** to the tested Linux + NVIDIA r
 | **MCP 2.x Server & Pydantic v2 Contracts** | **Verified** | Ubuntu 24.04 & macOS (Python 3.11/3.12) | Enforced in GitHub Actions (`ruff`, `mypy`, `pytest`) |
 | **Protocol Wiring & Failure Resilience** | **Verified (`mock`)** | CI (`httpx.MockTransport` & local HTTP stubs) | Live chaos/timeout suite tracked in `v0.2.0` |
 | **FFmpeg `-14 LUFS` & `.otio` Export** | **Verified (`mock` / local)** | CI & macOS local CLI | Live multi-shot `.otio` path resolution gated in `v0.2.0` smoke test |
-| **Ollama `Qwen2.5-VL` Vision QA** | **Experimental** | Local Ollama (`qwen2.5vl:7b`) | Full-res frames caused `300s` timeouts; `<= 768px` resize + pre-warm fix scheduled in `v0.2.0` |
-| **ComfyUI Wan 2.2 & MuseTalk Render** | **Experimental** | External GPU host | Requires manual endpoint & model setup; opt-in `live_smoke` gate in `v0.2.0` |
-| **C2PA Cryptographic Signing** | **Experimental** | Local `c2patool` CLI | End-to-end test-CA signing & `c2patool` verification gated in `v0.2.0` |
+| **Ollama `Qwen2.5-VL` Vision QA** | **Verified (`v0.2.0-ref-linux-gpu`)** | Local Ollama (`qwen2.5vl:7b`) | Full-res frames caused `300s` timeouts; `<= 768px` resize + pre-warm fix scheduled in `v0.2.0` |
+| **ComfyUI Wan 2.2 & MuseTalk Render** | **Verified (`v0.2.0-ref-linux-gpu`)** | External GPU host | Requires manual endpoint & model setup; opt-in `live_smoke` gate in `v0.2.0` |
+| **C2PA Cryptographic Signing** | **Verified (`v0.2.0-ref-linux-gpu`)** | Local `c2patool` CLI | End-to-end test-CA signing & `c2patool` verification gated in `v0.2.0` |
 
 ## System Architecture
 
