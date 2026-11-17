@@ -1,0 +1,28 @@
+name: Bug Report
+description: Report a bug in CineForge-Agent or its MCP server
+title: "bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and any error traceback.
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Runtime Mode
+      options:
+        - mock
+        - hybrid
+        - production
+    validations:
+      required: true
+  - type: textarea
+    id: doctor-output
+    attributes:
+      label: Environment & cineforge-doctor Output
+      description: Paste the output of `cineforge-doctor` and your OS/Python version.
+      render: shell

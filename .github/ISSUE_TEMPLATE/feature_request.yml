@@ -1,0 +1,24 @@
+name: Feature Request
+description: Propose a new provider, ComfyUI workflow, or export feature
+title: "feat: "
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Target Component
+      options:
+        - Video / TTS / VLM Provider Adapter
+        - ComfyUI Workflow JSON Template
+        - NLE / OTIO / C2PA Exporter
+        - MCP 2.0 Server Tool
+        - Documentation / CI
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal Details
+      description: Describe the use case, expected behavior, and any relevant API schemas.
+    validations:
+      required: true
