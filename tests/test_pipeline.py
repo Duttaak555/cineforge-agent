@@ -6,7 +6,11 @@ from cineforge.mcp.server import add_shot, init_project, register_character, reg
 
 
 @pytest.mark.asyncio
-async def test_end_to_end_mixed_engines_and_export(tmp_path):
+async def test_end_to_end_mixed_engines_and_export(tmp_path, monkeypatch):
+    from cineforge.config import settings
+    monkeypatch.setattr(settings, "c2pa_cert_path", None)
+    monkeypatch.setattr(settings, "c2pa_key_path", None)
+
     settings.workspace_dir = tmp_path
     pid = "ci_test_proj"
     init_project(pid, "CI Verification Film", budget_usd=1.0)

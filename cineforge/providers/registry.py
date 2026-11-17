@@ -1,12 +1,15 @@
-import asyncio
-import base64
+from __future__ import annotations
+
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import httpx
 
 from cineforge.providers.base import TTSProvider, VideoProvider, VLMQAProvider
+from cineforge.qa.ollama_critic import evaluate_keyframe
+from cineforge.safety.production_gate import poll_until_complete
 from cineforge.schemas.bible import CharacterEntity
 from cineforge.schemas.timeline import QAReport, Shot
 
@@ -37,10 +40,14 @@ class ComfyUIWan22Provider(VideoProvider):
         base_url: str = "http://localhost:8188",
         workflow_template_path: Path | None = None,
         cost_per_shot: float = 0.05,
+        max_poll_seconds: float = 300.0,
+        poll_interval_seconds: float = 2.0,
     ):
         self.base_url = base_url.rstrip("/")
         self.workflow_path = workflow_template_path or Path("workflows/wan22_t2v_api.json")
         self.cost_per_shot = cost_per_shot
+        self.max_poll_seconds = max_poll_seconds
+        self.poll_interval_seconds = poll_interval_seconds
 
     def estimate_cost(self, shot: Shot) -> float:
         return self.cost_per_shot
@@ -60,12 +67,22 @@ class ComfyUIWan22Provider(VideoProvider):
             res = await client.post(f"{self.base_url}/prompt", json={"prompt": workflow})
             res.raise_for_status()
             pid = res.json()["prompt_id"]
-            while True:
+
+            async def _check_comfy() -> dict[str, Any]:
                 hist = (await client.get(f"{self.base_url}/history/{pid}")).json()
                 if pid in hist:
-                    outputs = hist[pid].get("outputs", {})
-                    break
-                await asyncio.sleep(2.0)
+                    status_info = hist[pid].get("status", {})
+                    if str(status_info.get("status_str", "")).lower() == "error":
+                        return {"status": "failed", "detail": status_info}
+                    return {"status": "completed", "outputs": hist[pid].get("outputs", {})}
+                return {"status": "running"}
+
+            poll_result = await poll_until_complete(
+                _check_comfy,
+                deadline_seconds=self.max_poll_seconds,
+                interval_seconds=self.poll_interval_seconds,
+            )
+            outputs = poll_result.get("outputs", {})
 
             meta = next((i for o in outputs.values() for i in (o.get("videos") or o.get("gifs") or [])), None)
             if not meta:
@@ -121,27 +138,17 @@ class OllamaVLMQAProvider(VLMQAProvider):
         self.timeout_sec = timeout_sec
 
     async def inspect_shot(self, shot: Shot, grounded_prompt: str, keyframe_path: Path) -> QAReport:
-        img_b64 = base64.b64encode(keyframe_path.read_bytes()).decode("utf-8")
-        prompt = (
-            'Audit frame vs prompt. Reply ONLY JSON {"passed": bool, "score": float, "critique": "str"}.\n'
-            f"Prompt: {grounded_prompt}"
-        )
         async with httpx.AsyncClient(timeout=self.timeout_sec) as client:
-            res = await client.post(
-                f"{self.base_url}/api/generate",
-                json={
-                    "model": self.model,
-                    "prompt": prompt,
-                    "images": [img_b64],
-                    "format": "json",
-                    "stream": False,
-                    "keep_alive": "10m",
-                },
+            critique = await evaluate_keyframe(
+                client=client,
+                base_url=self.base_url,
+                image_path=keyframe_path,
+                shot_brief=grounded_prompt,
+                model=self.model,
             )
-            res.raise_for_status()
-            raw = json.loads(res.json()["response"])
-            return QAReport(
-                passed=bool(raw.get("passed", False)),
-                score=float(raw.get("score", 0.0)),
-                critique=str(raw.get("critique", "")),
-            )
+        summary = "; ".join(critique.defects) if critique.defects else "Passed visual QA inspection."
+        return QAReport(
+            passed=critique.passed,
+            score=critique.score,
+            critique=summary,
+        )

@@ -44,9 +44,9 @@ def sign_c2pa_manifest(
         pk = serialization.load_pem_private_key(key_pem, password=None)
         if not isinstance(pk, ec.EllipticCurvePrivateKey):
             raise TypeError("C2PA ES256 signing requires an EllipticCurvePrivateKey.")
-        signer = c2pa.create_signer(
+        signer = c2pa.Signer.from_callback(
             lambda d: pk.sign(d, ec.ECDSA(hashes.SHA256())),
-            c2pa.SigningAlg.ES256,
+            c2pa.C2paSigningAlg.ES256,
             cert_pem,
             "http://timestamp.digicert.com",
         )

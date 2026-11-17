@@ -71,14 +71,14 @@ async def test_comfyui_wan22_provider_integration(tmp_path, monkeypatch):
 async def test_kokoro_ollama_musetalk_providers(tmp_path, monkeypatch):
     sample_mp4 = _make_dummy_mp4(tmp_path / "base.mp4")
     dummy_png = tmp_path / "frame.png"
-    dummy_png.write_bytes(b"\x89PNG\r\n\x1a\n")
+    dummy_png.write_bytes(b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc```\x00\x00\x00\x04\x00\x01\xf6\x178U\x00\x00\x00\x00IEND\xaeB`\x82')
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/v1/audio/speech":
             return httpx.Response(200, content=b"RIFF_MOCK_WAV_BYTES")
-        if request.url.path == "/api/generate":
+        if request.url.path in ("/api/generate", "/api/chat"):
             return httpx.Response(
-                200, json={"response": json.dumps({"passed": True, "score": 0.94, "critique": "Clean frame"})}
+                200, json={"message": {"content": '{"passed": true, "score": 0.94, "defects": []}'}, "response": json.dumps({"passed": True, "score": 0.94, "critique": "Clean frame"})}
             )
         if request.url.path == "/v1/lipsync":
             return httpx.Response(200, content=sample_mp4)

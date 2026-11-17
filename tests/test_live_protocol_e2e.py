@@ -58,9 +58,9 @@ async def test_production_mode_over_real_local_http_sockets(tmp_path: Path) -> N
                 self._send_json({"prompt_id": "live_socket_job_1"})
             elif self.path == "/v1/audio/speech":
                 self._send_bytes(sample_wav, "audio/wav")
-            elif self.path == "/api/generate":
+            elif self.path in ("/api/generate", "/api/chat"):
                 self._send_json(
-                    {"response": json.dumps({"passed": True, "score": 0.98, "critique": "Verified over TCP"})}
+                    {"message": {"content": '{"passed": true, "score": 0.95, "defects": []}'}, "response": json.dumps({"passed": True, "score": 0.98, "critique": "Verified over TCP"})}
                 )
             elif self.path == "/v1/lipsync":
                 self._send_bytes(sample_mp4, "video/mp4")

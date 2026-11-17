@@ -90,13 +90,14 @@ services:
       kokoro-tts:
         condition: service_healthy
     environment:
-      - CINEFORGE_MODE=production
+      - MODE=production
       - OLLAMA_URL=http://ollama:11434
+      - LIPSYNC_URL=http://musetalk:8890
       - COMFYUI_URL=http://comfyui:8188
-      - KOKORO_URL=http://kokoro-tts:8880
+      - KOKORO_URL=http://kokoro-tts:8880/v1
       - C2PA_CERT_PATH=/data/certs/c2pa_signer.pem
       - C2PA_KEY_PATH=/data/certs/c2pa_signer.key
-      - CINEFORGE_OUTPUT_DIR=/data/outputs
+      - WORKSPACE_DIR=/data/outputs
       - CINEFORGE_MAX_BUDGET_USD=10.00
     volumes:
       - cineforge_outputs:/data/outputs
