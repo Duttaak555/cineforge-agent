@@ -85,6 +85,20 @@ flowchart TD
 | **Code Quality, Static Types & Containerization** | `ruff check`, `mypy`, and `docker build` jobs on every push | **Verified in CI** |
 | **Live GPU Model Inference (Wan 2.2, Kokoro-82M, Qwen2.5-VL, MuseTalk)** | Requires local GPU/CUDA model weights & running services (`MODE=production` or `MODE=hybrid`) | **External Runtime** |
 
+## ComfyUI workflow presets
+
+The default provider uses `workflows/wan22_t2v_api.json` for text-to-video.
+`workflows/wan22_i2v_api.json` is a separate API graph for Wan 2.2 TI2V 5B,
+based on the [ComfyUI project template](https://github.com/Comfy-Org/workflow_templates/blob/3e0d149bff40f931538b918f0d6df7e232fcc17b/templates/video_wan2_2_5B_ti2v.json).
+It uses the core video nodes and does not replace the default provider.
+
+Pass the template path, grounded positive prompt, negative prompt, locked seed,
+and reference image file to `render_wan22_i2v_workflow` in
+`cineforge.providers.workflow_templates`. Stage the image in ComfyUI's input
+directory first and pass its path relative to that directory. The helper returns
+a graph for the `prompt` field of ComfyUI's API request. CI checks the bindings
+and graph without weights or a live GPU.
+
 ## Quick Start
 
 ```bash
